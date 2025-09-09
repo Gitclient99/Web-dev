@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simple Online Survey</title>
+  <style>
+    /* Simple, clean styles */
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#f7fafc; color:#111; padding:20px; }
+    .container { max-width:800px; margin:0 auto; background:white; padding:20px; border-radius:8px; box-shadow:0 6px 18px rgba(10,10,10,0.06); }
+    h1{ margin:0 0 8px; }
+    form{ margin-top:12px; }
+    label{ display:block; margin:12px 0 6px; font-weight:600; }
+    .option-row{ display:flex; gap:12px; flex-wrap:wrap; margin-top:6px; }
+    .option-row label{ font-weight:400; }
+    textarea{ width:100%; min-height:90px; padding:8px; border-radius:6px; border:1px solid #dfe3e8; }
+    input[type="text"], input[type="email"], select{ width:100%; padding:8px; border-radius:6px; border:1px solid #dfe3e8; }
+    .btns{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+    button{ padding:8px 12px; border-radius:6px; border:0; cursor:pointer; }
+    button.primary{ background:#2563eb; color:white; }
+    button.ghost{ background:#e6eefc; color:#0b3a8c; }
+    button.warn{ background:#fecaca; color:#7a0505; }
+    .results{ margin-top:18px; background:#fbfbff; padding:12px; border-radius:8px; border:1px solid #eef2ff; }
+    table{ width:100%; border-collapse:collapse; margin-top:8px; }
+    th,td{ padding:8px; border-bottom:1px solid #eee; text-align:left; }
+    .small{ font-size:0.9rem; color:#555; }
+    .center{ text-align:center; }
+    .stat{ display:inline-block; margin-right:12px; padding:6px 10px; background:#f1f5f9; border-radius:6px; }
+    footer{ margin-top:18px; font-size:0.85rem; color:#666; }
+    @media (max-width:520px){ .option-row{ flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Simple Online Survey</h1>
+    <p class="small">Thanks for taking a moment — your responses are stored locally in your browser. (For real deployments use a server.)</p>
+
+    <form id="surveyForm">
+      <label for="name">Name (optional)</label>
+      <input id="name" name="name" type="text" placeholder="Your name">
+
+      <label for="email">Email (optional)</label>
+      <input id="email" name="email" type="email" placeholder="you@example.com">
+
+      <label>How did you hear about us?</label>
+      <div class="option-row" id="sourceOptions">
+        <label><input type="radio" name="source" value="Search engine"> Search engine</label>
+        <label><input type="radio" name="source" value="Social media"> Social media</label>
+        <label><input type="radio" name="source" value="Friend"> Friend</label>
+        <label><input type="radio" name="source" value="Other"> Other</label>
+      </div>
+
+      <label>How satisfied are you with our service? <span class="small">(1 = poor, 5 = excellent)</span></label>
+      <div class="option-row" id="ratingOptions">
+        <label><input type="radio" name="rating" value="1"> 1</label>
+        <label><input type="radio" name="rating" value="2"> 2</label>
+        <label><input type="radio" name="rating" value="3"> 3</label>
+        <label><input type="radio" name="rating" value="4"> 4</label>
+        <label><input type="radio" name="rating" value="5"> 5</label>
+      </div>
+
+      <label for="improvements">What can we improve? (optional)</label>
+      <textarea id="improvements" name="improvements" placeholder="Tell us..."></textarea>
+
+      <div class="btns">
+        <button type="submit" class="primary">Submit Response</button>
+        <button type="button" id="viewResultsBtn" class="ghost">View Results</button>
+        <button type="button" id="exportCsvBtn" class="ghost">Export CSV</button>
+        <button type="button" id="resetBtn" class="warn">Reset All (clear storage)</button>
+      </div>
+    </form>
+
+    <div id="results" class="results" style="display:none;">
+      <h3>Aggregated Results</h3>
+      <div id="summaryStats"></div>
+      <div id="rawList"></div>
+    </div>
+
+    <footer>Local demo — not for production. To store responses on a server, see the PHP snippet below the form.</footer>
+
+    <details style="margin-top:12px;">
+      <summary class="small">Optional: PHP server-side example (save to `submit.php`)</summary>
+      <pre class="small" style="white-space:pre-wrap; background:#fff; padding:8px; border-radius:6px; border:1px solid #eee;">
+&lt;?php
+// WARNING: minimal example — sanitize & secure before production.
+$data = json_decode(file_get_contents('php://input'), true);
+if(!$data){
+  http_response_code(400); echo json_encode(['error'=>'No JSON']); exit;
+}
+$storeFile = __DIR__ . '/survey_responses.json';
+$existing = [];
+if(file_exists($storeFile)){
+  $existing = json_decode(file_get_contents($storeFile), true) ?? [];
+}
+$existing[] = $data;
+file_put_contents($storeFile, json_encode($existing, JSON_PRETTY_PRINT));
+echo json_encode(['ok'=>true]);
+?&gt;
+      </pre>
+    </details>
+
+  </div>
+
+  <script>
+    // Key used in localStorage
+    const STORAGE_KEY = 'simpleSurveyResponses_v1';
+
+    // Helpers
+    function loadResponses(){
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch(e) {
+        console.error('loadResponses error', e);
+        return [];
+      }
+    }
+    function saveResponses(arr){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+    }
+
+    function getFormData(form){
+      const fd = new FormData(form);
+      // read radio values gracefully
+      const source = fd.get('source') || '';
+      const rating = fd.get('rating') || '';
+      return {
+        id: 'r_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+        timestamp: new Date().toISOString(),
+        name: (fd.get('name') || '').trim(),
+        email: (fd.get('email') || '').trim(),
+        source,
+        rating: rating ? Number(rating) : null,
+        improvements: (fd.get('improvements') || '').trim()
+      };
+    }
+
+    function renderResults(){
+      const responses = loadResponses();
+      const resultsDiv = document.getElementById('results');
+      const summary = document.getElementById('summaryStats');
+      const rawList = document.getElementById('rawList');
+
+      if(!responses.length){
+        summary.innerHTML = '<p class="small">No responses yet.</p>';
+        rawList.innerHTML = '';
+        resultsDiv.style.display = 'block';
+        return;
+      }
+
+      // Aggregation
+      const total = responses.length;
+      const sourceCounts = {};
+      let ratingSum = 0, ratingCount = 0;
+      const comments = [];
+
+      responses.forEach(r=>{
+        const s = r.source || 'Unspecified';
+        sourceCounts[s] = (sourceCounts[s] || 0) + 1;
+        if(Number.isFinite(r.rating)){
+          ratingSum += r.rating; ratingCount++;
+        }
+        if(r.improvements) comments.push({id:r.id, text:r.improvements, time:r.timestamp});
+      });
+
+      const avgRating = ratingCount ? (ratingSum / ratingCount) : null;
+
+      // Build summary HTML
+      let html = '';
+      html += `<div class="stat">Total responses: <strong>${total}</strong></div>`;
+      html += `<div class="stat">Average rating: <strong>${avgRating ? avgRating.toFixed(2) : '—'}</strong></div>`;
+      html += `<h4 style="margin-top:12px">Source breakdown</h4>`;
+      html += '<ul class="small">';
+      for(const key of Object.keys(sourceCounts)){
+        html += `<li>${key}: ${sourceCounts[key]} (${((sourceCounts[key]/total)*100).toFixed(1)}%)</li>`;
+      }
+      html += '</ul>';
+      if(comments.length){
+        html += `<h4>Comments (${comments.length})</h4>`;
+        html += '<ul class="small">';
+        comments.slice(0,10).forEach(c => {
+          const t = new Date(c.time).toLocaleString();
+          html += `<li>${escapeHtml(c.text)} <span class="small" style="color:#666">— ${t}</span></li>`;
+        });
+        if(comments.length > 10) html += `<li class="small">... (${comments.length - 10} more)</li>`;
+        html += '</ul>';
+      }
+      summary.innerHTML = html;
+
+      // Raw table
+      let table = '<table><thead><tr><th>Name</th><th>Email</th><th>Source</th><th>Rating</th><th>Comment</th><th>Time</th></tr></thead><tbody>';
+      responses.slice().reverse().forEach(r=>{
+        table += `<tr>
+            <td>${escapeHtml(r.name || '')}</td>
+            <td>${escapeHtml(r.email || '')}</td>
+            <td>${escapeHtml(r.source || '')}</td>
+            <td class="center">${r.rating ?? ''}</td>
+            <td>${escapeHtml(r.improvements || '')}</td>
+            <td class="small">${new Date(r.timestamp).toLocaleString()}</td>
+          </tr>`;
+      });
+      table += '</tbody></table>';
+      rawList.innerHTML = table;
+      resultsDiv.style.display = 'block';
+    }
+
+    function escapeHtml(s){
+      return String(s)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    // CSV export
+    function exportCSV(){
+      const responses = loadResponses();
+      if(!responses.length){ alert('No responses to export'); return; }
+      const headers = ['id','timestamp','name','email','source','rating','improvements'];
+      const rows = responses.map(r => headers.map(h => {
+        const v = r[h] ?? '';
+        // wrap & escape quotes
+        return `"${String(v).replaceAll('"','""')}"`;
+      }).join(','));
+      const csv = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'survey_responses.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    // Form submit handler
+    document.getElementById('surveyForm').addEventListener('submit', function(e){
+      e.preventDefault();
+      const data = getFormData(this);
+
+      // Minimal validation: rating required (customize as you like)
+      if(data.rating === null){
+        if(!confirm('You did not select a rating. Submit anyway?')) return;
+      }
+
+      const arr = loadResponses();
+      arr.push(data);
+      saveResponses(arr);
+
+      // UI feedback
+      alert('Thanks — your response was saved locally.');
+      this.reset();
+      renderResults();
+    });
+
+    document.getElementById('viewResultsBtn').addEventListener('click', function(){
+      renderResults();
+      // scroll to results
+      document.getElementById('results').scrollIntoView({behavior:'smooth'});
+    });
+
+    document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
+
+    document.getElementById('resetBtn').addEventListener('click', function(){
+      if(confirm('This will permanently delete all locally saved responses. Continue?')){
+        localStorage.removeItem(STORAGE_KEY);
+        renderResults();
+        alert('Cleared.');
+      }
+    });
+
+    // On first load render summary (if any)
+    renderResults();
+
+    // Optionally: function to POST to server (disabled by default)
+    async function postToServer(obj){
+      // Example usage:
+      // await fetch('/submit.php', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj)});
+    }
+
+  </script>
+</body>
+</html>
